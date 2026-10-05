@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="th" data-voice-protocol="2">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>บันทึกเสียง · Auto Form</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&family=Prompt:wght@400;500;600&display=swap">
+  <style>
+    /* Sriphat Medical Center CI (same tokens as the form) */
+    :root { --slate:#414857; --emerald:#019875; --emerald-dark:#017a5e; --mint:#6ecbb8; --canvas:#f7f9fb; --surface:#fff;
+      --sunken:#f2f5f7; --line:#d1d3d4; --ink:#222; --body:#4a4f58; --muted:#787878; --danger:#c0392b; --danger-bg:#fdf2f0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.55 "Open Sans","Prompt","Noto Sans Thai","Leelawadee UI",system-ui,sans-serif; color: var(--body); background: var(--canvas); }
+    header { display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 16px; background: var(--slate); color: #fff; }
+    header img { height: 22px; filter: brightness(0) invert(1); }
+    header .div { width: 1px; height: 20px; background: rgb(255 255 255 / 25%); }
+    header strong { font-size: 14px; }
+    main { padding: 16px; display: grid; gap: 12px; }
+    main > * { min-width: 0; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; }
+    #state { font-weight: 600; color: var(--ink); margin: 0; }
+    #state.live::before { content: "● "; color: var(--danger); }
+    #state.error { color: var(--danger); }
+    #detail { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button { font: inherit; cursor: pointer; border-radius: 4px; padding: 10px 18px; border: 1px solid var(--emerald); background: var(--emerald); color: #fff; font-weight: 600; }
+    button:hover { background: var(--emerald-dark); }
+    button.secondary { background: transparent; color: var(--slate); border-color: var(--line); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    button:focus-visible, select:focus-visible { outline: 3px solid rgb(1 152 117 / 35%); outline-offset: 2px; }
+    select { min-width: 0; max-width: 100%; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+    label { font-weight: 600; color: var(--ink); }
+    .meter { height: 8px; background: var(--sunken); border-radius: 4px; overflow: hidden; }
+    .meter > span { display: block; height: 100%; width: 0; background: var(--emerald); transition: width .1s linear; }
+    #transcript { white-space: pre-wrap; max-height: 40vh; overflow: auto; font-size: 14px; color: var(--ink); min-height: 4em; }
+    #transcript .interim { color: var(--muted); font-style: italic; }
+    .note { font-size: 12.5px; color: var(--muted); margin: 0; }
+    .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #fdf8ef; border: 1px solid #b8791a; color: #8a5a10; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="sriphat-logo.png" alt="ศูนย์ศรีพัฒน์">
+    <span class="div" aria-hidden="true"></span>
+    <strong>บันทึกเสียงสำหรับกรอกแบบฟอร์ม</strong>
+  </header>
+  <main>
+    <section class="card" aria-labelledby="state">
+      <p id="state" role="status" aria-live="polite">กำลังเชื่อมต่อกับแบบฟอร์ม…</p>
+      <p id="detail"></p>
+    </section>
+    <section class="card">
+      <div class="row" style="margin-bottom:10px">
+        <label for="engine">ระบบถอดเสียง</label>
+        <select id="engine">
+          <option value="gemini">Gemini Live (gemini-3.5-transcribe-live)</option>
+          <option value="s2t">สำรอง: Medical S2T (poc.loolootest.com) — ส่งทุก 10–15 วินาที</option>
+          <option value="webspeech">สำรอง: Web Speech ของเบราว์เซอร์ (Chrome)</option>
+        </select>
+      </div>
+      <div class="row">
+        <button id="start" type="button" disabled>เริ่มฟัง</button>
+        <button id="stop" type="button" class="secondary" disabled>หยุด</button>
+      </div>
+      <div class="meter" style="margin-top:10px" aria-hidden="true"><span id="level"></span></div>
+      <p id="archive" role="status" aria-live="polite" class="note" style="margin-top:10px">ยังไม่เริ่มบันทึกไฟล์เสียง</p>
+      <button id="retry" type="button" class="secondary" hidden>ลองบันทึกไฟล์เสียงอีกครั้ง</button>
+    </section>
+    <section class="card" aria-label="ข้อความที่ถอดได้">
+      <div id="transcript"><span class="note">ข้อความที่ถอดเสียงได้จะแสดงที่นี่ และส่งไปยังแบบฟอร์มอัตโนมัติ</span></div>
+    </section>
+    <p class="note">เปิดหน้าต่างนี้ค้างไว้ระหว่างพูด · เสียงถูกส่งไปถอดความและบันทึกเป็นไฟล์ส่วนตัวใน Drive เป็นช่วงประมาณ 30 วินาที · กดหยุดและรอจนบันทึกครบก่อนปิดหน้าต่าง การปิดทันทีอาจทำให้เสียงช่วงท้ายสูญหาย · ค่าที่ AI เสนอจะไม่ถูกกรอกจนกว่าคุณจะกดยอมรับในแบบฟอร์ม</p>
+  </main>
+  <script src="pcm.js?v=2"></script>
+  <script>
+  (function () {
+    'use strict';
+    // Only the Apps Script sandbox (and local preview) may drive this page.
+    var ALLOWED_OPENERS = [/^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/, /^http:\/\/localhost:\d+$/];
+    var TEST = new URLSearchParams(location.search).get('test') === '1';
+    var $ = function (id) { return document.getElementById(id); };
+    var openerOrigin = null, listening = false, engine = null, lastS2t = null, transcriptFinal = [], reqSeq = 0, pendingTokens = {};
+    var engines = { gemini: true, s2t: false }, stopping = null;
+    var archive = { phase: 'idle', sessionId: null, stream: null, recorder: null, timer: null,
+      seq: 0, pending: new Map(), flushed: false, error: '', captureError: false, finishSent: false, ready: null, run: 0, stopAt: null };
+    var captureStart = null, startRequestAt = null, traceSeq = 0, s2tSeq = 0, traces = new Map(), replaySegments = new Map(), testSegments = TEST ? new Map() : null;
+
+    function controls() {
+      var busy = archive.phase !== 'idle' && archive.phase !== 'complete';
+      $('start').disabled = !openerOrigin || busy || !!engine || !!stopping;
+      $('stop').disabled = !busy || archive.phase === 'draining';
+      $('engine').disabled = busy || !!engine || !!stopping;
+    }
+    function setState(state, detail) {
+      var labels = { idle: 'พร้อมแล้ว — กด “เริ่มฟัง”', connecting: 'กำลังเชื่อมต่อ…', listening: 'กำลังฟัง', stopped: 'หยุดฟังแล้ว', error: 'ผิดพลาด' };
+      $('state').textContent = labels[state] || state;
+      $('state').className = state === 'listening' ? 'live' : state === 'error' ? 'error' : '';
+      $('detail').textContent = detail || '';
+      controls();
+      send({ type: 'voice:state', state: state, message: detail || '', engine: engineLabel() });
+    }
+    function engineLabel() { return { gemini: 'Gemini Live', s2t: 'Medical S2T', webspeech: 'Web Speech' }[$('engine').value]; }
+    function send(msg) { if (openerOrigin && window.opener && !window.opener.closed) window.opener.postMessage(msg, openerOrigin); }
+    function timing(stage, elapsedMs, traceId) {
+      if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return;
+      var m = { type: 'voice:timing', stage: stage, durationMs: Math.round(elapsedMs) };
+      if (traceId) m.traceId = traceId;
+      send(m);
+    }
+    function finalMessage(text, speechTime) {
+      var traceId = 'v' + (++traceSeq), started = captureStart === null ? performance.now() : captureStart;
+      var elapsedMs = Math.round(performance.now() - started);
+      traces.set(traceId, { capture: started, request: startRequestAt });
+      if (traces.size > 100) traces.delete(traces.keys().next().value);
+      timing('capture-to-final', elapsedMs, traceId);
+      send({ type: 'voice:final', text: text, t: speechTime || Date.now(), traceId: traceId, elapsedMs: elapsedMs });
+    }
+    function addTranscript(k, text) {
+      var i = transcriptFinal.length;
+      while (i > 0 && transcriptFinal[i - 1].k > k) i--;
+      transcriptFinal.splice(i, 0, { k: k, text: text });
+    }
+    function renderTranscript(interim) {
+      var box = $('transcript');
+      box.textContent = transcriptFinal.map(function (x) { return x.text; }).join('\n');
+      if (interim) { var s = document.createElement('span'); s.className = 'interim'; s.textContent = (transcriptFinal.length ? '\n' : '') + interim; box.appendChild(s); }
+      box.scrollTop = box.scrollHeight;
+    }
+    function onInterim(text) { renderTranscript(text); send({ type: 'voice:interim', text: text }); }
+    function onFinal(text) {
+      text = String(text || '').trim();
+      if (!text) return;
+      addTranscript(Date.now(), text); renderTranscript(''); finalMessage(text);
+    }
+
+    window.addEventListener('message', function (e) {
+      if (e.source !== window.opener) return;
+      if (!openerOrigin) {
+        if (!ALLOWED_OPENERS.some(function (re) { return re.test(e.origin); }) || !e.data || e.data.type !== 'voice:hello') return;
+        openerOrigin = e.origin;
+        document.title = 'บันทึกเสียง · ' + (e.data.title || 'Auto Form');
+        if (e.data.engines) engines = e.data.engines;
+        Array.prototype.forEach.call($('engine').options, function (o) { o.disabled = o.value !== 'webspeech' && !engines[o.value]; o.hidden = o.disabled; });
+        $('engine').value = engines.gemini ? 'gemini' : engines.s2t ? 's2t' : 'webspeech';
+        setState('idle');
+        return;
+      }
+      if (e.origin !== openerOrigin) return;
+      var m = e.data || {};
+      if (m.type === 'voice:token' && pendingTokens[m.reqId]) { pendingTokens[m.reqId](m); delete pendingTokens[m.reqId]; }
+      else if (m.type === 'voice:stop' || (m.type === 'archive:stop' && (!m.sessionId || m.sessionId === archive.sessionId))) stop();
+      else if (m.type === 'voice:segment-result') {
+        if (replaySegments.has(m.seq)) {
+          var replay = replaySegments.get(m.seq); replaySegments.delete(m.seq);
+          timing('s2t-replay', performance.now() - replay.started);
+          if (m.error) $('detail').textContent = 'ถอดเสียงช่วงเชื่อมต่อขาดไม่สำเร็จ ไฟล์เสียงยังอยู่ใน Drive';
+          else if (m.text) { addTranscript(replay.t, m.text); renderTranscript(''); finalMessage(m.text, replay.t); }
+        } else if (testSegments && testSegments.has(m.seq)) {
+          var t = testSegments.get(m.seq); testSegments.delete(m.seq);
+          if (!m.error && m.text) { addTranscript(t, m.text); renderTranscript(''); finalMessage(m.text, t); }
+        } else if (lastS2t) lastS2t.onResult(m);
+      }
+      else if (m.type === 'voice:start') start();
+      else if (m.type === 'archive:ready' && archive.ready) {
+        if (!m.error && (typeof m.sessionId !== 'string' || !m.sessionId)) return;
+        var ready = archive.ready; archive.ready = null; ready(m);
+      }
+      else if (m.type === 'archive:ack' && m.sessionId === archive.sessionId && archive.pending.has(m.seq)) {
+        var part = archive.pending.get(m.seq);
+        if (m.error) { part.error = true; archive.error = 'บันทึกไฟล์เสียงไม่สำเร็จ กรุณาลองอีกครั้ง'; }
+        else {
+          archive.pending.delete(m.seq); timing('archive-ack', performance.now() - part.sentAt);
+          if (!archive.captureError && !Array.from(archive.pending.values()).some(function (p) { return p.error; })) archive.error = '';
+        }
+        archiveUI(); maybeFinish();
+      }
+      else if (m.type === 'archive:complete' && m.sessionId === archive.sessionId && archive.finishSent) {
+        clearTimeout(archive.timer);
+        if (m.error) { archive.error = 'ปิดชุดไฟล์เสียงไม่สำเร็จ กรุณาลองอีกครั้ง'; archive.finishSent = false; }
+        else {
+          archive.phase = 'complete'; archive.error = '';
+          if (archive.stopAt !== null) timing('stop-to-archive-ready', performance.now() - archive.stopAt);
+        }
+        archiveUI(); controls();
+      }
+      else if (m.type === 'archive:retry' && m.sessionId === archive.sessionId) retryArchive();
+      else if (m.type === 'voice:visible' && typeof m.traceId === 'string' && traces.has(m.traceId)) {
+        var trace = traces.get(m.traceId), now = performance.now();
+        timing('capture-to-visible', now - trace.capture, m.traceId);
+        if (trace.request !== null) timing('start-to-suggestions', now - trace.request, m.traceId);
+        traces.delete(m.traceId);
+      }
+    });
+    if (!window.opener) setState('error', 'เปิดหน้านี้จากปุ่ม “กรอกด้วยเสียง” ในแบบฟอร์มเท่านั้น');
+    else window.opener.postMessage({ type: 'voice:ready', protocol: 2 }, '*');
+    setInterval(function () {
+      if (window.opener && window.opener.closed && archive.phase !== 'idle' && archive.phase !== 'complete') {
+        stop(); archive.error = 'แบบฟอร์มถูกปิดแล้ว ไฟล์ที่ยังไม่ยืนยันยังอยู่ในหน้านี้'; archiveUI();
+      }
+    }, 1000);
+
+    function recorderMime() {
+      if (!window.MediaRecorder) throw new Error('เบราว์เซอร์นี้ไม่รองรับ MediaRecorder');
+      var mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
+        .filter(function (m) { return MediaRecorder.isTypeSupported(m); })[0];
+      if (!mime) throw new Error('เบราว์เซอร์นี้ไม่รองรับรูปแบบไฟล์เสียงที่บันทึกได้');
+      return mime;
+    }
+    function archiveUI() {
+      var labels = { idle: 'ยังไม่เริ่มบันทึกไฟล์เสียง', beginning: 'กำลังเตรียมบันทึกไฟล์เสียงส่วนตัว…',
+        capturing: 'กำลังบันทึกไฟล์เสียงส่วนตัว', draining: 'หยุดแล้ว กำลังรอบันทึกไฟล์เสียงครบ…', complete: 'บันทึกไฟล์เสียงครบแล้ว ปิดหน้าต่างได้' };
+      $('archive').textContent = (archive.error || labels[archive.phase]) + ' · รอยืนยัน ' + archive.pending.size + ' ไฟล์';
+      $('archive').style.color = archive.error ? 'var(--danger)' : '';
+      $('retry').hidden = !(archive.pending.size || archive.error || (archive.phase === 'draining' && archive.finishSent));
+      if (archive.phase === 'capturing' || archive.phase === 'draining' || archive.phase === 'complete' || archive.error) {
+        send({ type: 'archive:state', state: archive.error ? 'failed' : archive.phase,
+          message: $('archive').textContent, sessionId: archive.sessionId });
+      }
+    }
+    function postPart(part) {
+      part.error = false; part.sentAt = performance.now();
+      send({ type: 'archive:part', sessionId: archive.sessionId, seq: part.seq, blob: part.blob,
+        mime: part.mime, durationMs: part.durationMs });
+    }
+    function retryArchive() {
+      if (!archive.captureError) archive.error = '';
+      archive.pending.forEach(postPart);
+      if (archive.phase === 'draining' && archive.flushed && !archive.pending.size) {
+        archive.finishSent = false; maybeFinish();
+      }
+      archiveUI();
+    }
+    function maybeFinish() {
+      if (archive.phase !== 'draining' || !archive.sessionId || !archive.flushed || archive.pending.size || archive.finishSent || archive.captureError) return;
+      archive.finishSent = true;
+      send({ type: 'archive:finish', sessionId: archive.sessionId, expectedParts: archive.seq });
+      clearTimeout(archive.timer);
+      archive.timer = setTimeout(function () {
+        archive.error = 'ยังไม่ได้รับการยืนยันชุดไฟล์เสียง กรุณาลองอีกครั้ง'; archiveUI();
+      }, 30000);
+      archiveUI();
+    }
+    function beginArchive() {
+      archive.phase = 'beginning'; archive.sessionId = null; archive.seq = 0;
+      archive.pending.clear(); archive.flushed = false; archive.finishSent = false; archive.error = ''; archive.captureError = false;
+      captureStart = null; archive.stopAt = null; archiveUI(); controls();
+      return new Promise(function (resolve, reject) {
+        var timer = setTimeout(function () { archive.ready = null; reject(new Error('แบบฟอร์มไม่ยืนยันการเก็บเสียง กรุณาโหลดแบบฟอร์มและหน้าต่างเสียงใหม่')); }, 30000);
+        archive.ready = function (m) {
+          clearTimeout(timer);
+          if (m.error) reject(new Error(m.error));
+          else { archive.sessionId = m.sessionId; resolve(); }
+        };
+        send({ type: 'archive:begin' });
+      });
+    }
+    function closeMic() {
+      if (archive.stream) archive.stream.getTracks().forEach(function (t) { t.stop(); });
+      archive.stream = null;
+      $('level').style.width = '0';
+    }
+    function archiveSegment() {
+      var chunks = [], started = performance.now(), mime = recorderMime();
+      var rec = new MediaRecorder(archive.stream, { mimeType: mime, audioBitsPerSecond: 32000 });
+      var resolveFlush;
+      archive.recorder = { rec: rec, done: new Promise(function (resolve) { resolveFlush = resolve; }) };
+      rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onerror = function () { archive.captureError = true; archive.error = 'เครื่องบันทึกเสียงขัดข้อง กรุณาหยุดและตรวจสอบไฟล์'; archiveUI(); stop(); };
+      rec.onstop = function () {
+        clearTimeout(archive.timer);
+        var type = (rec.mimeType || mime).split(';')[0];
+        if (chunks.length) {
+          var part = { seq: archive.seq++, blob: new Blob(chunks, { type: type }), mime: type,
+            durationMs: Math.round(performance.now() - started), sentAt: 0, error: false };
+          archive.pending.set(part.seq, part); postPart(part);
+        }
+        chunks = [];
+        archive.recorder = null; resolveFlush(); archiveUI();
+        if (archive.phase === 'capturing') {
+          if (archive.pending.size >= 30) {
+            archive.error = 'รอยืนยันครบ 30 ไฟล์ หยุดอัตโนมัติเพื่อไม่ให้เสียงสูญหาย กรุณาลองบันทึกอีกครั้ง';
+            stop(); archiveUI();
+          } else {
+            try { archiveSegment(); } catch (e) { archive.captureError = true; archive.error = 'เริ่มไฟล์เสียงถัดไปไม่สำเร็จ'; stop(); archiveUI(); }
+          }
+        }
+      };
+      rec.start();
+      archive.timer = setTimeout(function () { if (rec.state === 'recording') rec.stop(); }, 30000);
+    }
+
+    function requestToken() {
+      return new Promise(function (resolve, reject) {
+        var id = ++reqSeq;
+        var timer = setTimeout(function () { delete pendingTokens[id]; reject(new Error('ไม่ได้รับ token จากแบบฟอร์ม')); }, 20000);
+        pendingTokens[id] = function (m) { clearTimeout(timer); if (m.error) reject(new Error(m.error)); else resolve(m); };
+        send({ type: 'voice:token-request', reqId: id });
+      });
+    }
+
+    function startAudio(stream, onChunk) {
+      var ctx;
+      try { ctx = new AudioContext({ sampleRate: 16000 }); } catch (e) { ctx = new AudioContext(); }
+      var workletSrc = 'class P extends AudioWorkletProcessor{process(i){var c=i[0]&&i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor("pcm-tap",P);';
+      var url = URL.createObjectURL(new Blob([workletSrc], { type: 'application/javascript' }));
+      return ctx.audioWorklet.addModule(url).then(function () {
+        var src = ctx.createMediaStreamSource(stream), node = new AudioWorkletNode(ctx, 'pcm-tap');
+        var chunker = Pcm.createPcmChunker(1600, onChunk);
+        node.port.onmessage = function (ev) {
+          chunker.push(ev.data, ctx.sampleRate);
+          $('level').style.width = Math.min(100, Pcm.rms(ev.data) * 400) + '%';
+        };
+        src.connect(node);
+        return ctx.resume().then(function () {
+          return { stop: function () {
+            node.port.onmessage = null; src.disconnect(); node.disconnect(); chunker.flush(); ctx.close();
+          } };
+        });
+      }).catch(function (e) { ctx.close(); throw e; }).finally(function () { URL.revokeObjectURL(url); });
+    }
+
+    function GeminiEngine() {
+      var ws = null, ready = false, buffer = [], bufferStart = 0, stopped = false, closing = false, tap = null;
+      var versionIdx = 0, versions = ['v1beta', 'v1alpha'], boundary = 0, quietMs = 0, hasVoice = false, pendingFinals = 0, turnHadTranscript = false;
+      var drainResolve = null, drainTimer = null, finalTimer = null;
+      function finishDrain() {
+        clearTimeout(drainTimer); clearTimeout(finalTimer);
+        if (ws && ws.readyState < 2) ws.close();
+        if (drainResolve) { var done = drainResolve; drainResolve = null; done(); }
+      }
+      function sendAudio(int16) {
+        if (stopped) return;
+        var msg = JSON.stringify({ realtimeInput: { audio: { data: Pcm.int16ToBase64(int16), mimeType: 'audio/pcm;rate=16000' } } });
+        if (ready && ws && ws.readyState === 1) ws.send(msg);
+        else {
+          if (!buffer.length) bufferStart = Date.now();
+          buffer.push(msg);
+          if (buffer.length >= 50 && !closing) fail('Gemini เชื่อมต่อขาดเกิน 5 วินาที เสียงยังบันทึกในไฟล์ส่วนตัว', api);
+          return;
+        }
+        var level = Math.sqrt(Array.prototype.reduce.call(int16, function (s, x) { return s + (x / 32768) * (x / 32768); }, 0) / int16.length);
+        if (level >= 0.01) hasVoice = true;
+        quietMs = level < 0.01 ? quietMs + int16.length / 16 : 0;
+        if (!closing && hasVoice && performance.now() - boundary >= 10000 && quietMs >= 400) {
+          ws.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
+          boundary = performance.now(); quietMs = 0; hasVoice = false; pendingFinals++;
+          timing('gemini-boundary', boundary - captureStart);
+        }
+      }
+      function connect(attempt) {
+        attempt = attempt || 0;
+        var started = performance.now();
+        return requestToken().then(function (t) {
+          if (stopped) return;
+          timing('gemini-token', performance.now() - started);
+          if (t.wsVersions) versions = t.wsVersions;
+          return new Promise(function (resolve, reject) {
+            var settled = false, socketStart = performance.now();
+            var ver = versions[versionIdx] || 'v1beta';
+            var socket = new WebSocket('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.' + ver +
+              '.GenerativeService.BidiGenerateContentConstrained?access_token=' + encodeURIComponent(t.token));
+            ws = socket; ready = false;
+            var setupTimer = setTimeout(function () { if (!settled) { settled = true; reject(new Error('Gemini ไม่ยืนยันการเชื่อมต่อ')); socket.close(); } }, 20000);
+            socket.onopen = function () { if (!stopped) socket.send(JSON.stringify({ setup: t.setup })); else socket.close(); };
+            socket.onmessage = function (ev) {
+              (typeof ev.data === 'string' ? Promise.resolve(ev.data) : ev.data.text()).then(function (txt) {
+                if (socket !== ws) return;
+                var msg = JSON.parse(txt);
+                if (msg.setupComplete && !stopped) {
+                  clearTimeout(setupTimer); settled = true; ready = true;
+                  buffer.splice(0).forEach(function (m) { socket.send(m); });
+                  timing('gemini-setup', performance.now() - socketStart);
+                  resolve(); return;
+                }
+                var c = msg.serverContent;
+                if (c && c.interimInputTranscription) onInterim(c.interimInputTranscription.text || '');
+                if (c && c.inputTranscription) {
+                  onFinal(c.inputTranscription.text);
+                  if (c.inputTranscription.text) { pendingFinals = Math.max(0, pendingFinals - 1); turnHadTranscript = true; }
+                  if (closing && c.inputTranscription.text && !pendingFinals) {
+                    clearTimeout(finalTimer); finalTimer = setTimeout(finishDrain, 1000);
+                  }
+                }
+                if (c && c.turnComplete) {
+                  if (!turnHadTranscript) pendingFinals = Math.max(0, pendingFinals - 1);
+                  turnHadTranscript = false;
+                  if (closing && !pendingFinals) finishDrain();
+                }
+                if (msg.goAway && !stopped && !closing) socket.close();
+              }).catch(function () { if (!closing && !stopped) fail('อ่านข้อมูลจาก Gemini Live ไม่สำเร็จ', api); });
+            };
+            socket.onclose = function () {
+              clearTimeout(setupTimer);
+              if (socket !== ws) return;
+              var wasReady = ready; ready = false;
+              if (closing) { finishDrain(); return; }
+              if (stopped) { if (!settled) { settled = true; resolve(); } return; }
+              if (!settled) {
+                settled = true;
+                if (attempt < versions.length - 1) {
+                  versionIdx = (versionIdx + 1) % versions.length; connect(attempt + 1).then(resolve, reject);
+                } else reject(new Error('เชื่อมต่อ Gemini Live ไม่สำเร็จ ลองเลือกระบบสำรอง'));
+              } else if (wasReady) {
+                setState('connecting', 'เชื่อมต่อ Gemini ใหม่ เสียงยังบันทึกอยู่');
+                connect(0).then(function () { if (!stopped && !closing) setState('listening'); }).catch(function (e) { fail(e.message, api); });
+              }
+            };
+          });
+        });
+      }
+      var api = {
+        kind: 'gemini',
+        takeBuffered: function () {
+          if (!buffer.length) return null;
+          var packets = buffer.splice(0).map(function (msg) { return JSON.parse(msg).realtimeInput.audio.data; });
+          return { bytes: Pcm.wavFromBase64(packets), t: bufferStart };
+        },
+        prepare: function () { return connect(0); },
+        start: function (stream) {
+          boundary = performance.now();
+          return startAudio(stream, sendAudio).then(function (adapter) {
+            tap = adapter;
+            if (closing || stopped) { tap.stop(); tap = null; return; }
+            listening = true; setState('listening');
+          });
+        },
+        stop: function () {
+          if (closing || stopped) return Promise.resolve();
+          closing = true;
+          if (tap) { tap.stop(); tap = null; }
+          stopped = true;
+          if (!ready || !ws || ws.readyState !== 1) { if (ws) ws.close(); return Promise.resolve(); }
+          return new Promise(function (resolve) {
+            drainResolve = resolve;
+            if (hasVoice || pendingFinals) {
+              if (hasVoice) { pendingFinals++; ws.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } })); }
+              drainTimer = setTimeout(function () {
+                timing('gemini-final-timeout', 20000);
+                $('detail').textContent = 'รอข้อความช่วงท้ายเกินเวลา ไฟล์เสียงยังคงถูกบันทึก'; finishDrain();
+              }, 20000);
+            } else finishDrain();
+          });
+        }
+      };
+      return api;
+    }
+
+    function WebSpeechEngine() {
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      var rec = null, stopped = false, done = null, timer = null;
+      return {
+        kind: 'webspeech',
+        start: function (stream) {
+          if (!SR) return Promise.reject(new Error('เบราว์เซอร์นี้ไม่รองรับ Web Speech ใช้ Chrome หรือเลือก Gemini Live'));
+          // SpeechRecognition opens its own browser-managed mic. The shared stream remains archived.
+          rec = new SR(); rec.lang = 'th-TH'; rec.continuous = true; rec.interimResults = true;
+          rec.onresult = function (ev) {
+            var interim = '';
+            for (var i = ev.resultIndex; i < ev.results.length; i++) {
+              if (ev.results[i].isFinal) onFinal(ev.results[i][0].transcript); else interim += ev.results[i][0].transcript;
+            }
+            onInterim(interim);
+          };
+          rec.onerror = function (ev) { if (ev.error !== 'no-speech' && ev.error !== 'aborted') fail('Web Speech: ' + ev.error); };
+          rec.onend = function () {
+            if (stopped) { clearTimeout(timer); if (done) { done(); done = null; } }
+            else if (listening) { try { rec.start(); } catch (e) { fail('เริ่ม Web Speech ใหม่ไม่สำเร็จ'); } }
+          };
+          rec.start(); listening = true; setState('listening');
+          return Promise.resolve();
+        },
+        stop: function () {
+          stopped = true;
+          if (!rec) return Promise.resolve();
+          return new Promise(function (resolve) {
+            done = resolve;
+            timer = setTimeout(function () { if (done) { done(); done = null; } }, 10000);
+            try { rec.stop(); } catch (e) { clearTimeout(timer); done = null; resolve(); }
+          });
+        }
+      };
+    }
+
+    function S2tEngine() {
+      var MIN_SEG_MS = 10000, MAX_SEG_MS = 15000, PAUSE_MS = 400, VOICE_RMS = 0.01;
+      var stream = null, ctx = null, analyser = null, source = null, rec = null, voiced = false;
+      var stopped = false, quietMs = 0, levelTimer = null, segTimer = null, pending = {};
+      var segmentDone = Promise.resolve(), finishResult = null, resultTimer = null;
+      var mime = recorderMime();
+      function pendingNote() {
+        var n = Object.keys(pending).length;
+        return n ? 'กำลังถอดเสียง ' + n + ' ช่วง…' : '';
+      }
+      function resultsDone() {
+        if (stopped && !Object.keys(pending).length && finishResult) {
+          clearTimeout(resultTimer); var done = finishResult; finishResult = null; done();
+        }
+      }
+      function startSegment() {
+        var chunks = [], started = Date.now(), startClock = performance.now();
+        voiced = false; quietMs = 0;
+        var recorder = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32000 });
+        rec = recorder;
+        segmentDone = new Promise(function (resolve) {
+          recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+          recorder.onerror = function () { fail('Medical S2T บันทึกช่วงเสียงไม่สำเร็จ', api); };
+          recorder.onstop = function () {
+            clearTimeout(segTimer);
+            var type = (recorder.mimeType || mime).split(';')[0], blob = new Blob(chunks, { type: type });
+            var n = s2tSeq++, hadVoice = voiced;
+            if (hadVoice && blob.size > 0) {
+              pending[n] = { started: startClock, t: started };
+              send({ type: 'voice:segment', seq: n, t: started, blob: blob, mime: type });
+              renderTranscript(pendingNote());
+            }
+            if (!stopped) startSegment();
+            resolve(); resultsDone();
+          };
+        });
+        recorder.start();
+        segTimer = setTimeout(cut, MAX_SEG_MS);
+        api.segStart = startClock;
+      }
+      function cut() { clearTimeout(segTimer); if (rec && rec.state === 'recording') rec.stop(); }
+      var api = {
+        kind: 's2t', segStart: 0,
+        start: function (sharedStream) {
+          stream = sharedStream; ctx = new AudioContext();
+          analyser = ctx.createAnalyser(); analyser.fftSize = 2048;
+          source = ctx.createMediaStreamSource(stream); source.connect(analyser);
+          var buf = new Float32Array(analyser.fftSize);
+          levelTimer = setInterval(function () {
+            analyser.getFloatTimeDomainData(buf);
+            var level = Pcm.rms(buf);
+            if (level > VOICE_RMS) { voiced = true; quietMs = 0; } else quietMs += 100;
+            if (rec && rec.state === 'recording' && performance.now() - api.segStart >= MIN_SEG_MS && quietMs >= PAUSE_MS) cut();
+            $('level').style.width = Math.min(100, level * 400) + '%';
+          }, 100);
+          startSegment(); listening = true; setState('listening', 'ส่งเสียงไปถอดความทุก 10–15 วินาที');
+          return ctx.resume();
+        },
+        onResult: function (m) {
+          var part = pending[m.seq];
+          if (!part) return;
+          delete pending[m.seq];
+          timing('s2t-result', performance.now() - part.started);
+          if (m.error) $('detail').textContent = 'ช่วงที่ ' + (m.seq + 1) + ': ' + m.error;
+          else {
+            var text = String(m.text || '').trim();
+            if (text) { addTranscript(part.t, text); finalMessage(text, part.t); }
+          }
+          renderTranscript(pendingNote()); resultsDone();
+        },
+        stop: function () {
+          stopped = true; clearInterval(levelTimer); cut();
+          return segmentDone.then(function () {
+            if (source) source.disconnect();
+            if (ctx) ctx.close();
+            if (!Object.keys(pending).length) return;
+            return new Promise(function (resolve) {
+              finishResult = resolve;
+              resultTimer = setTimeout(function () {
+                $('detail').textContent = 'ยังไม่ได้รับข้อความช่วงท้าย ไฟล์เสียงยังคงถูกบันทึก';
+                timing('s2t-final-timeout', 60000); finishResult = null; resolve();
+              }, 60000);
+            });
+          });
+        }
+      };
+      return api;
+    }
+
+    function make(kind) {
+      if (kind === 's2t') return (lastS2t = S2tEngine());
+      return kind === 'gemini' ? GeminiEngine() : WebSpeechEngine();
+    }
+    function fail(msg, sourceEngine) {
+      if (sourceEngine && engine !== sourceEngine) return;
+      if (archive.phase === 'draining' || stopping) return;
+      var previous = engine, wasGemini = previous && previous.kind === 'gemini';
+      listening = false;
+      if (wasGemini && engines.s2t && archive.stream) {
+        previous.stop();
+        var buffered = previous.takeBuffered();
+        if (buffered) {
+          var seq = s2tSeq++;
+          replaySegments.set(seq, { t: buffered.t, started: performance.now() });
+          send({ type: 'voice:segment', seq: seq, t: buffered.t, blob: new Blob([buffered.bytes], { type: 'audio/wav' }), mime: 'audio/wav' });
+        }
+        $('engine').value = 's2t';
+        try {
+          engine = make('s2t');
+          setState('connecting', 'Gemini Live ใช้ไม่ได้ สลับไปใช้ Medical S2T อัตโนมัติ');
+          var fallback = engine;
+          fallback.start(archive.stream).catch(function (e) { fail(e.message, fallback); });
+        } catch (e) { stop(); setState('error', e.message || String(e)); }
+        return;
+      }
+      stop(); setState('error', msg);
+    }
+    function start() {
+      if (engine || stopping || !openerOrigin || (archive.phase !== 'idle' && archive.phase !== 'complete')) return;
+      startRequestAt = performance.now();
+      setState('connecting');
+      var current, run = ++archive.run;
+      beginArchive().then(function () {
+        if (run !== archive.run || archive.phase !== 'beginning') { maybeFinish(); return; }
+        recorderMime();
+        current = engine = make($('engine').value);
+        if (!current.prepare) return;
+        return current.prepare().catch(function (e) {
+          if (run !== archive.run || archive.phase !== 'beginning') return;
+          if (!engines.s2t) throw e;
+          current.stop(); $('engine').value = 's2t'; current = engine = make('s2t');
+          setState('connecting', 'Gemini Live ใช้ไม่ได้ สลับไปใช้ Medical S2T อัตโนมัติ');
+        });
+      }).then(function () {
+        if (run !== archive.run || archive.phase !== 'beginning') return;
+        var started = performance.now();
+        return navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(function (stream) {
+          if (run !== archive.run || archive.phase !== 'beginning') { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+          archive.stream = stream; captureStart = performance.now();
+          timing('microphone-open', captureStart - started);
+          archive.phase = 'capturing'; archiveSegment(); archiveUI();
+          return current.start(stream);
+        });
+      }).catch(function (e) {
+        if (run !== archive.run) return;
+        if (!archive.sessionId) { archive.phase = 'idle'; archive.ready = null; }
+        fail(e && e.name === 'NotAllowedError' ? 'ไม่ได้รับอนุญาตให้ใช้ไมโครโฟน กรุณาอนุญาตแล้วลองใหม่' : (e.message || String(e)), current);
+      });
+    }
+    function stop() {
+      if (stopping) return stopping;
+      if (archive.phase === 'idle' || archive.phase === 'complete') return Promise.resolve();
+      archive.phase = 'draining'; archive.stopAt = performance.now(); listening = false;
+      clearTimeout(archive.timer);
+      var current = engine; engine = null;
+      var recorder = archive.recorder;
+      var flushed = recorder ? recorder.done : Promise.resolve();
+      if (recorder && recorder.rec.state === 'recording') recorder.rec.stop();
+      setState('stopped', 'รอข้อความช่วงท้ายและไฟล์เสียงครบก่อนปิด'); archiveUI();
+      stopping = Promise.all([flushed.then(closeMic), current ? current.stop() : Promise.resolve()]).then(function () {
+        archive.flushed = true; stopping = null; maybeFinish(); controls();
+      });
+      return stopping;
+    }
+    $('start').addEventListener('click', start);
+    $('stop').addEventListener('click', stop);
+    $('retry').addEventListener('click', retryArchive);
+    window.addEventListener('beforeunload', function (e) {
+      if (archive.phase !== 'idle' && archive.phase !== 'complete') { e.preventDefault(); e.returnValue = ''; }
+    });
+    window.addEventListener('pagehide', function () {
+      // Unload cannot guarantee delivery of asynchronous recorder data or uploads.
+      stop(); closeMic();
+    });
+
+    // Test hook for the local preview only (?test=1): inject transcript lines without a microphone.
+    if (TEST) {
+      var b = document.createElement('span'); b.className = 'badge'; b.textContent = 'โหมดทดสอบ'; document.querySelector('header').appendChild(b);
+      window.VoiceTest = { final: onFinal, interim: onInterim, requestToken: requestToken,
+        segment: function (seq, text) {
+          var t = Date.now() - (10 - seq) * 1000;
+          testSegments.set(seq, t); s2tSeq = Math.max(s2tSeq, seq + 1);
+          send({ type: 'voice:segment', seq: seq, t: t, blob: new Blob([text], { type: 'audio/webm' }), mime: 'audio/webm' });
+        },
+        fail: function (msg) {
+          if (archive.phase === 'idle' || archive.phase === 'complete') {
+            if (!engines.s2t) return;
+            $('engine').value = 's2t'; start();
+          } else fail(msg, engine);
+        } };
+    }
+  })();
+  </script>
+</body>
+</html>
